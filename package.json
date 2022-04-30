@@ -1,5 +1,5 @@
 {
-  "name": "twitch-chatbot",
+  "name": "mecha-dannygerous",
   "version": "0.0.1",
   "description": "A simple app chatbot example. Using the command !echo will simply repeat the message.",
   "main": "bot.js",
@@ -19,7 +19,7 @@
     "node": "8.x"
   },
   "repository": {
-    "url": "https://glitch.com/edit/#!/twitch-chatbot"
+    "url": "https://github.com/dan-hein/mecha-dan.git"
   },
   "license": "MIT",
   "keywords": [

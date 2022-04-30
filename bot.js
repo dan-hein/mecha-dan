@@ -2,13 +2,13 @@
 require('dotenv').config({path:'C:\\Users\\Dan\\Downloads\\extreme-voracious-gold-2022-04-28_211823\\extreme-voracious-gold-2022-04-28_211823\\app\\.env'});
 const tmi = require('tmi.js');
 const say = require('say');
-const deepai = require('deepai'); // OR include deepai.min.js as a script tag in your HTML
+const deepai = require('deepai');
 const toxicity = require('@tensorflow-models/toxicity');
 
 deepai.setApiKey('6718db08-1050-4ab0-bb43-d02f6bd5a222');
 let chatEnabled = true;
 
-const threshold = 0.1;
+const threshold = 0.9;
 
 // Define configuration options
 const opts = {
@@ -23,6 +23,7 @@ const opts = {
 
 // Create a client with our options
 const client = new tmi.client(opts);
+const toxicClassifier = await initToxicAnalysis();
 
 // Register our event handlers (defined below)
 client.on('message', onMessageHandler);
@@ -30,50 +31,46 @@ client.on('connected', onConnectedHandler);
 
 // Connect to Twitch:
 client.connect();
-// say.getInstalledVoices(console.log);
 
-function toxic_analysis(msg, context) {
+
+async function initToxicAnalysis() {
+  return await toxicity.load(threshold, ['severe_toxicity', 'identity_attack', 'threat', 'sexual_explicit', 'obscene']);
+}
+
+async function toxic_analysis(msg, context) {
   let toxic = false;
-  toxicity.load(threshold, ['toxicity', 'severe_toxicity', 'identity_attack', 'insult', 'threat', 'sexual_explicit', 'obscene']).then(model => {
-    // Now you can use the `model` object to label sentences.
-    model.classify([msg]).then(predictions => {
-        for (let result in predictions) {
-          if (result.match) {
-            let text = `${context.username} your message was analyzed and tagged as mean. Shame on you.`;
-            say.speak(text, 'Microsoft Zira Desktop');
-            toxic = true;
-            return toxic;
-          }
+  let predictions = await toxicClassifier.classify([msg]);
+
+  predictions.every(prediction => {
+    return prediction.results.every(result => {
+      if (result.match) {
+        let text = `${context.username} your message was analyzed and tagged as ${prediction.label}. Shame on you.`;
+        say.speak(text, 'Microsoft Zira Desktop');
+        toxic = true;
+        return false;
       }
-    });
+      return true;
+    })
   });
 
   return toxic;
 }
 
-function censor_sentences(response) {
+async function censor_sentences(response) {
   let sentences = response.split(/\(?[^.?!]+[.!?]\)?/g);
-  let toxic = false;
-  toxicity.load(threshold, ['toxicity', 'severe_toxicity', 'identity_attack', 'insult', 'threat', 'sexual_explicit', 'obscene']).then(model => {
-    // Now you can use the `model` object to label sentences.
-    model.classify(sentences).then(predictions => {
+  let predictions = await toxicClassifier.classify(sentences);
 
-      for (let prediction in predictions) {
-        for (let result in prediction.results) {
-          if (result.match) {
-            let text = `Response was censored due to possible detection of offensive content`;
-            say.speak(text, 'Microsoft Zira Desktop');
-            toxic = true;
-            return;
-          }
-        }
+  for(let i = 0; i < sentences.length; i++) {
+    predictions.every(prediction => {
+      if (prediction.results[i].match) {
+        sentences[i] = `[Sentence was censored due to possible detection of ${prediction.label} content].`;
+        return false;
       }
-
-      return false;
+      return true;
     });
-  });
+  }
 
-  return toxic;
+  return sentences.join(' ');
 }
 
 // Called every time a message comes in
@@ -91,23 +88,24 @@ function onMessageHandler (target, context, msg, self) {
   }
 
   if (chatEnabled) {
-    // let b = toxic_analysis(msg, context);
-    // if(b)
-    //   return;
+    toxic_analysis(msg, context).then(toxic => {
+      if(!toxic) {
+        (async function() {
+          const resp = await deepai.callStandardApi("text-generator", {
+            text: context.username + ' said ' + msg + '. I am AI Dannygerous while dannygerous is playing Crash Bandicoot during a work meeting, and I think ',
+          });
 
-    (async function() {
-      const resp = await deepai.callStandardApi("text-generator", {
-        text: context.username + ' said ' + msg + '. I am AI Dannygerous while dannygerous is playing Crash Bandicoot during a work meeting, and I think ',
-      });
+          return await resp;
+        })().then(resp => {
+          console.log(resp);
+          censor_sentences(resp.output).then(output => {
+            say.speak(output, 'Microsoft Zira Desktop');
+          });
+        })
+      }
+    });
 
-      return await resp;
-    })().then(resp => {
-      console.log(resp);
 
-      say.speak(resp.output, 'Microsoft Zira Desktop');
-      // if(!censor_sentences(resp.output)) {
-      // }
-    })
   }
 }
 
